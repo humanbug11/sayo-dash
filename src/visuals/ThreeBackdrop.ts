@@ -47,6 +47,8 @@ export class ThreeBackdrop {
 
   private tick = () => {
     this.raf = requestAnimationFrame(this.tick);
+    // Keep Three.js as a title-only background; no extra GPU work during a race.
+    if (this.renderer.domElement.parentElement?.dataset.scene !== 'menu' || document.hidden) return;
     const t = performance.now() * 0.00035;
     this.group.rotation.z = Math.sin(t) * 0.08;
     this.group.rotation.y = t * 0.35;

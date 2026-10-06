@@ -1,65 +1,40 @@
 import Phaser from 'phaser';
 import { loadUiAssets } from '../utils/loadUiAssets';
-
-type ResultData = { timeMs?: number; coins?: number };
-
+import { readBest, saveBest, type RaceResult } from '../systems/RaceRecord';
+import { sceneKey } from '../utils/sceneKeys';
+import { button, cityBackdrop, text } from '../utils/ui';
 export class ResultScene extends Phaser.Scene {
   constructor() { super('result'); }
   preload(): void { loadUiAssets(this); }
-
-  create(data: ResultData): void {
-    const { width, height } = this.scale;
-    const timeMs = Math.max(0, data.timeMs ?? 0);
-    const coins = Math.max(0, data.coins ?? 0);
-    const seconds = timeMs / 1000;
-
-    this.add.rectangle(width / 2, height / 2, width, height, 0x03142f, 0.72);
-    this.add.circle(width / 2, 180, 150, 0x22d3ee, 0.12);
-    this.add.circle(width / 2, 180, 105, 0xfacc15, 0.08);
-
-    this.add.text(width / 2, 125, 'FINISH!', {
-      fontFamily: 'system-ui, sans-serif', fontSize: '72px', fontStyle: 'bold',
-      color: '#ffffff', stroke: '#082f74', strokeThickness: 12,
-    }).setOrigin(0.5);
-
-    const grade = seconds < 22 ? 'S' : seconds < 30 ? 'A' : seconds < 42 ? 'B' : 'C';
-    const gradeColor = grade === 'S' ? '#facc15' : grade === 'A' ? '#22d3ee' : '#ffffff';
-
-    this.add.text(width / 2, 235, grade, {
-      fontFamily: 'system-ui, sans-serif', fontSize: '96px', fontStyle: 'bold',
-      color: gradeColor, stroke: '#061d4f', strokeThickness: 12,
-    }).setOrigin(0.5);
-
-    this.add.text(width / 2, 340, `${seconds.toFixed(2)} 秒`, {
-      fontFamily: 'system-ui, sans-serif', fontSize: '52px', fontStyle: 'bold',
-      color: '#ffffff',
-    }).setOrigin(0.5);
-
-    this.add.image(width / 2 - 85, 415, 'ui-coin').setDisplaySize(54, 54);
-    this.add.text(width / 2 - 40, 415, `${coins} / 15`, {
-      fontFamily: 'system-ui, sans-serif', fontSize: '34px', fontStyle: 'bold', color: '#ffe27a',
-    }).setOrigin(0, 0.5);
-
-    const makeButton = (x: number, label: string, color: number, action: () => void) => {
-      const box = this.add.rectangle(x, 535, 300, 86, color, 1).setStrokeStyle(5, 0xffffff, 0.18)
-        .setInteractive({ useHandCursor: true });
-      const txt = this.add.text(x, 535, label, {
-        fontFamily: 'system-ui, sans-serif', fontSize: '30px', fontStyle: 'bold', color: '#ffffff',
-      }).setOrigin(0.5);
-      box.on('pointerover', () => this.tweens.add({ targets: [box, txt], scaleX: 1.05, scaleY: 1.05, duration: 100 }));
-      box.on('pointerout', () => this.tweens.add({ targets: [box, txt], scaleX: 1, scaleY: 1, duration: 100 }));
-      box.on('pointerdown', action);
-    };
-
-    makeButton(width / 2 - 170, 'もう一度', 0xff8a00, () => this.scene.start('game'));
-    makeButton(width / 2 + 170, 'タイトルへ', 0x1688ff, () => this.scene.start('menu'));
-
-    this.add.text(width / 2, 635, 'SPACE / ENTER：もう一度　　ESC：タイトル', {
-      fontFamily: 'system-ui, sans-serif', fontSize: '18px', color: '#bfeeff',
-    }).setOrigin(0.5);
-
-    this.input.keyboard?.once('keydown-SPACE', () => this.scene.start('game'));
-    this.input.keyboard?.once('keydown-ENTER', () => this.scene.start('game'));
-    this.input.keyboard?.once('keydown-ESC', () => this.scene.start('menu'));
+  create(data: RaceResult): void {
+    document.querySelector('#game')?.setAttribute('data-scene', 'result');
+    cityBackdrop(this);
+    this.add.rectangle(640, 350, 880, 620, 0xffffff, 0.88).setStrokeStyle(2, 0xffffff);
+    const previous = readBest();
+    const record = saveBest(data.timeMs);
+    const seconds = data.timeMs / 1000;
+    const medal = seconds < 22 ? 'GOLD' : seconds < 30 ? 'SILVER' : seconds < 42 ? 'BRONZE' : 'FINISH';
+    text(this, 640, 91, 'CITY CLEAR', 18, '#0891b2');
+    text(this, 640, 142, 'GOAL!', 52);
+    text(this, 640, 217, `${seconds.toFixed(2)} s`, 68);
+    text(this, 640, 282, record ? 'NEW BEST!' : `BEST  ${((previous ?? data.timeMs) / 1000).toFixed(2)} s`, 23, '#0891b2');
+    text(this, 640, 321, `${medal}${previous ? `  /  ${((data.timeMs - previous) / 1000).toFixed(2)} s vs BEST` : ''}`, 16, '#64748b');
+    const stats: Array<[string, string]> = [
+      ['PERFECT', `${data.steps ? Math.round(data.perfect / data.steps * 100) : 0}%`],
+      ['MAX COMBO', String(data.maxCombo)], ['COIN', `${data.coins} / 15`], ['MISS', String(data.misses)],
+    ];
+    stats.forEach(([label, value], i) => {
+      const x = 358 + i * 188;
+      this.add.rectangle(x, 408, 170, 104, 0xe0f2fe, 0.7);
+      text(this, x, 382, label, 14, '#0e7490'); text(this, x, 424, value, 30);
+    });
+    let leaving = false;
+    const go = (name: string) => { if (!leaving) { leaving = true; this.scene.start(name); } };
+    button(this, 490, 529, 'もう一度  ↻', () => go('game'));
+    button(this, 830, 529, 'タイトルへ', () => go('menu'), false);
+    text(this, 640, 605, 'ENTER / SPACE：もう一度    ESC：タイトル', 17, '#64748b');
+    sceneKey(this, 'keydown-ENTER', () => go('game'));
+    sceneKey(this, 'keydown-SPACE', () => go('game'));
+    sceneKey(this, 'keydown-ESC', () => go('menu'));
   }
 }

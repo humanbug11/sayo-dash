@@ -15,6 +15,8 @@ export class RunInput {
     this.combo = 0;
   }
 
+  breakCombo(): void { this.combo = 0; this.lastKey = null; this.lastStepAt = 0; }
+
   getCombo(): number {
     return this.combo;
   }
@@ -27,7 +29,7 @@ export class RunInput {
       return { valid: false, timing: 'miss', impulse: 0 };
     }
 
-    const delta = this.lastStepAt === 0 ? 220 : now - this.lastStepAt;
+    const delta = this.lastKey === null ? 220 : now - this.lastStepAt;
     this.lastKey = key;
     this.lastStepAt = now;
 
@@ -46,15 +48,15 @@ export class RunInput {
     }
 
     if (delta <= 260) {
-      this.combo += 1;
+      this.combo = 0;
       return {
         valid: true,
         timing: 'good',
-        impulse: 68 + Math.min(this.combo, 12),
+        impulse: 68,
       };
     }
 
-    this.combo = Math.max(0, this.combo - 1);
+    this.combo = 0;
     return { valid: true, timing: 'late', impulse: 38 };
   }
 }

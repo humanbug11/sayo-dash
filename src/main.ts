@@ -7,7 +7,7 @@ import { ResultScene } from './scenes/ResultScene';
 
 const gameHost = document.querySelector<HTMLElement>('#game');
 if (!gameHost) throw new Error('game host not found');
-new ThreeBackdrop(gameHost);
+try { new ThreeBackdrop(gameHost); } catch { /* Phaser can use canvas when WebGL is unavailable. */ }
 
 const config: Phaser.Types.Core.GameConfig = {
   type: Phaser.AUTO,
@@ -24,4 +24,4 @@ const config: Phaser.Types.Core.GameConfig = {
   scene: [MenuScene, GameScene, ResultScene],
 };
 
-new Phaser.Game(config);
+export const game = new Phaser.Game(config);

@@ -2,7 +2,7 @@ import Phaser from 'phaser';
 import { RunInput } from '../systems/RunInput';
 import { loadUiAssets } from '../utils/loadUiAssets';
 
-type ResultData = { timeMs: number; coins: number };
+import type { RaceResult } from '../systems/RaceRecord';
 
 export class GameScene extends Phaser.Scene {
   private readonly worldWidth = 7600;
@@ -21,7 +21,19 @@ export class GameScene extends Phaser.Scene {
   private skillReadyAt = 0;
   private slideUntil = 0;
   private hazardInvulnerableUntil = 0;
-  private lastRunFrameAt = 0;
+  private guide!: Phaser.GameObjects.Text;
+  private guideUntil = 0;
+  private keyH!: Phaser.Input.Keyboard.Key;
+  private wasGrounded = false;
+  private respawning = false;
+  private boostReadyAt = 0;
+  private dashUntil = 0;
+  private dustAt = 0;
+  private trailAt = 0;
+  private steps = 0;
+  private perfect = 0;
+  private maxCombo = 0;
+  private misses = 0;
   private runFrame = 0;
 
   private timerText!: Phaser.GameObjects.Text;
@@ -44,6 +56,14 @@ export class GameScene extends Phaser.Scene {
 
   create(): void {
     this.runInput.reset();
+    this.speedLines = [];
+    this.wasGrounded = false;
+    this.respawning = false;
+    this.steps = this.perfect = this.maxCombo = this.misses = 0;
+    this.boostReadyAt = this.dashUntil = this.dustAt = this.trailAt = 0;
+    this.runFrame = 0;
+    this.guideUntil = this.time.now + 3000;
+    document.querySelector('#game')?.setAttribute('data-scene', 'game');
     this.startedAt = this.time.now;
     this.coinsCollected = 0;
     this.finished = false;
@@ -75,92 +95,50 @@ export class GameScene extends Phaser.Scene {
   private createRunnerTextures(): void {
     if (this.textures.exists('rayn-run-1')) return;
 
-    const draw = (key: string, pose: 'run1' | 'run2' | 'jump' | 'slide') => {
-      const g = this.make.graphics({ x: 0, y: 0 }, false);
-      const skin = 0xffdfbd;
-      const dark = 0x172033;
-      const cyan = 0x22d3ee;
-      const yellow = 0xfacc15;
-      const white = 0xf8fafc;
-
-      if (pose === 'slide') {
-        g.fillStyle(dark).fillCircle(66, 40, 24);
-        g.fillStyle(skin).fillCircle(78, 47, 16);
-        g.fillStyle(white).fillRoundedRect(50, 62, 95, 42, 14);
-        g.fillStyle(cyan).fillRect(107, 67, 10, 30);
-        g.fillStyle(dark).fillRoundedRect(112, 91, 78, 26, 9);
-        g.fillStyle(yellow).fillRect(160, 94, 10, 20);
-        g.lineStyle(14, dark, 1).lineBetween(82, 96, 28, 122);
-        g.lineStyle(14, dark, 1).lineBetween(130, 105, 198, 119);
-        g.fillStyle(white).fillRoundedRect(8, 112, 48, 18, 8);
-        g.fillStyle(white).fillRoundedRect(185, 111, 46, 18, 8);
-      } else {
-        const jump = pose === 'jump';
-        const phase = pose === 'run2' ? -1 : 1;
-        g.fillStyle(dark).fillCircle(58, 33, 29);
-        g.fillStyle(skin).fillCircle(65, 40, 18);
-        g.fillStyle(dark).fillTriangle(33, 18, 52, 0, 58, 26);
-        g.fillStyle(dark).fillTriangle(52, 13, 74, 2, 68, 28);
-        g.fillStyle(cyan).fillRoundedRect(45, 23, 16, 5, 2);
-
-        g.fillStyle(white).fillRoundedRect(37, 60, 70, 55, 14);
-        g.fillStyle(cyan).fillRect(71, 69, 8, 27);
-        g.fillStyle(dark).fillRoundedRect(84, 77, 33, 39, 8);
-        g.fillStyle(yellow).fillRect(104, 88, 6, 19);
-
-        const armA = jump ? -18 : 18 * phase;
-        const armB = jump ? -8 : -18 * phase;
-        g.lineStyle(12, dark, 1).lineBetween(43, 72, 22 + armA, 93);
-        g.lineStyle(12, dark, 1).lineBetween(102, 72, 126 + armB, 87);
-        g.fillStyle(skin).fillCircle(22 + armA, 93, 9);
-        g.fillStyle(skin).fillCircle(126 + armB, 87, 9);
-
-        if (jump) {
-          g.lineStyle(14, dark, 1).lineBetween(58, 112, 34, 145);
-          g.lineStyle(14, dark, 1).lineBetween(86, 112, 113, 143);
-          g.fillStyle(white).fillRoundedRect(14, 139, 42, 18, 8);
-          g.fillStyle(white).fillRoundedRect(101, 136, 42, 18, 8);
-        } else {
-          g.lineStyle(14, dark, 1).lineBetween(58, 112, 31 + 22 * phase, 153);
-          g.lineStyle(14, dark, 1).lineBetween(86, 112, 114 - 22 * phase, 151);
-          g.fillStyle(white).fillRoundedRect(16 + 22 * phase, 145, 44, 18, 8);
-          g.fillStyle(white).fillRoundedRect(100 - 22 * phase, 143, 44, 18, 8);
+    const atlas = this.textures.get('runner-atlas');
+    const source = atlas.getSourceImage() as HTMLImageElement;
+    const w = source.width / 3, h = source.height / 2;
+    ['rayn-run-1', 'rayn-run-2', 'rayn-jump', 'rayn-slide', 'rayn-dash', 'rayn-goal'].forEach((key, i) => {
+      const canvas = this.textures.createCanvas(key, 256, 256)!;
+      // Preserve proportions and align each pose's soles to the collider baseline.
+      const probe = document.createElement('canvas'); probe.width = Math.ceil(w); probe.height = Math.ceil(h);
+      const ctx = probe.getContext('2d')!;
+      ctx.drawImage(source, (i % 3) * w, Math.floor(i / 3) * h, w, h, 0, 0, w, h);
+      const pixels = ctx.getImageData(0, 0, probe.width, probe.height).data;
+      let left = probe.width, top = probe.height, right = 0, bottom = 0;
+      for (let y = 0; y < probe.height; y++) for (let x = 0; x < probe.width; x++) {
+        if (pixels[(y * probe.width + x) * 4 + 3] > 40) {
+          left = Math.min(left, x); right = Math.max(right, x); top = Math.min(top, y); bottom = Math.max(bottom, y);
         }
       }
-      g.generateTexture(key, pose === 'slide' ? 240 : 155, pose === 'slide' ? 145 : 170);
-      g.destroy();
-    };
-
-    draw('rayn-run-1', 'run1');
-    draw('rayn-run-2', 'run2');
-    draw('rayn-jump', 'jump');
-    draw('rayn-slide', 'slide');
+      const bw = right - left + 1, bh = bottom - top + 1;
+      const ratio = Math.min(220 / bw, (i === 3 ? 118 : 210) / bh);
+      canvas.context.drawImage(probe, left, top, bw, bh, (256 - bw * ratio) / 2, 230 - bh * ratio, bw * ratio, bh * ratio);
+      canvas.refresh();
+    });
   }
 
   private createBackground(): void {
     const sky = this.add.graphics();
-    sky.fillGradientStyle(0x6cdcff, 0x6cdcff, 0xdff8ff, 0xdff8ff, 1);
+    sky.fillGradientStyle(0xd9f6ff, 0xd9f6ff, 0xf8fcff, 0xf8fcff, 1);
     sky.fillRect(0, 0, this.worldWidth, 720);
-
-    for (let x = 120; x < this.worldWidth; x += 420) {
-      this.add.circle(x, 128 + (x % 3) * 18, 34, 0xffffff, 0.38);
-      this.add.circle(x + 30, 115, 26, 0xffffff, 0.38);
-      this.add.circle(x + 60, 130, 31, 0xffffff, 0.38);
+    this.add.circle(1060, 155, 58, 0xfef08a).setScrollFactor(0.08);
+    for (let x = 50; x < this.worldWidth; x += 420) {
+      this.add.ellipse(x, 170 + x % 73, 135, 38, 0xffffff, 0.8).setScrollFactor(0.12);
     }
-
-    for (let x = 100; x < this.worldWidth; x += 270) {
-      const h = 105 + ((x / 270) % 4) * 28;
-      this.add.rectangle(x, 505, 150, h, 0xffffff, 0.12).setOrigin(0.5, 1);
-      this.add.rectangle(x + 55, 510, 82, h * 0.7, 0x38bdf8, 0.12).setOrigin(0.5, 1);
+    for (let x = 0, i = 0; x < this.worldWidth; x += 175, i++) {
+      const h = 150 + (i * 71) % 200;
+      this.add.rectangle(x, 570, 132, h, 0xb7cddd, 0.6).setOrigin(0.5, 1).setScrollFactor(0.25);
+      this.add.rectangle(x + 12, 570 - h - 10, 8, 35, 0xb7cddd, 0.6).setScrollFactor(0.25);
+      for (let row = 0; row < 4; row++) for (let col = 0; col < 3; col++) {
+        this.add.rectangle(x - 36 + col * 34, 560 - row * 43, 18, 24, 0xffffff, 0.45).setScrollFactor(0.25);
+      }
     }
-
-    for (let x = 30; x < this.worldWidth; x += 170) {
-      this.add.circle(x, 570, 78, 0x22c55e, 0.2);
-      this.add.circle(x + 52, 578, 60, 0x16a34a, 0.16);
+    for (let x = 80, i = 0; x < this.worldWidth; x += 285, i++) {
+      const h = 90 + (i * 53) % 130;
+      this.add.rectangle(x, 710, 210, h + 100, 0x88b1c6, 0.35).setOrigin(0.5, 1).setScrollFactor(0.55);
+      this.add.rectangle(x + 55, 610 - h + 35, 12, 52, 0x67e8f9, 0.5).setScrollFactor(0.55);
     }
-
-    this.add.rectangle(this.worldWidth / 2, 660, this.worldWidth, 120, 0x14532d, 1);
-    this.add.rectangle(this.worldWidth / 2, 618, this.worldWidth, 10, 0xfacc15, 0.9);
   }
 
   private createStage(): void {
@@ -182,6 +160,13 @@ export class GameScene extends Phaser.Scene {
     [930, 2500, 4380, 5890].forEach(x => this.addBoost(x, this.floorY - 42));
     [3180, 4850, 6760].forEach(x => this.addHazard(x, this.floorY - 34));
 
+    // Overhead gates make sliding useful; spikes must still be jumped.
+    [1250, 4200, 6600].forEach(x => {
+      const gate = this.add.rectangle(x, 493, 130, 100, 0xf97316).setStrokeStyle(3, 0xffffff);
+      this.physics.add.existing(gate, true);
+      this.hazards.add(gate);
+      this.add.text(x, 426, 'S ↓', { fontSize: '24px', color: '#9a3412', fontStyle: 'bold' }).setOrigin(0.5);
+    });
     const coinPositions = [
       [700, 500], [1120, 500], [1830, 520], [2110, 430], [2330, 520],
       [3000, 515], [3390, 395], [3600, 510], [4100, 510], [4640, 430],
@@ -193,7 +178,7 @@ export class GameScene extends Phaser.Scene {
       const body = coin.body as Phaser.Physics.Arcade.Body;
       body.setAllowGravity(false);
       body.setImmovable(true);
-      body.setCircle(24);
+      body.setCircle(coin.width * 0.35);
       this.tweens.add({ targets: coin, y: y - 12, duration: 800, yoyo: true, repeat: -1, ease: 'Sine.InOut' });
       this.coins.add(coin);
     });
@@ -202,32 +187,48 @@ export class GameScene extends Phaser.Scene {
   }
 
   private addPlatform(x: number, y: number, width: number, height: number): void {
-    const platform = this.add.rectangle(x + width / 2, y, width, height, 0x334155);
-    platform.setStrokeStyle(5, 0x0f172a);
+    const platform = this.add.rectangle(x + width / 2, y, width, height, 0x263c55);
+    platform.setStrokeStyle(2, 0x163049);
+    this.add.rectangle(x + width / 2, y - height / 2 + 4, width, 8, 0x67e8f9);
+    if (height <= 30) {
+      this.add.text(x + width / 2, y - 48, 'W ↑ 上ルート', {
+        fontFamily: 'system-ui, sans-serif', fontSize: '16px', fontStyle: 'bold', color: '#0e7490',
+      }).setOrigin(0.5);
+      if (y >= 500) this.add.text(x + width / 2, this.floorY - 55, 'S ↓ 下ルート', {
+        fontFamily: 'system-ui, sans-serif', fontSize: '16px', fontStyle: 'bold', color: '#0e7490',
+      }).setOrigin(0.5);
+    }
+    if (height > 30) {
+      this.add.rectangle(x + width / 2, y + 92, width, 150, 0x263c55);
+      for (let dx = 35; dx < width; dx += 110) {
+        this.add.rectangle(x + dx, y + 60, 32, 42, 0x456079).setStrokeStyle(2, 0x193049);
+      }
+    }
     this.physics.add.existing(platform, true);
     this.platforms.add(platform);
   }
 
   private addBoost(x: number, y: number): void {
-    const pad = this.add.rectangle(x, y, 150, 24, 0x22d3ee).setStrokeStyle(4, 0x0369a1);
+    const pad = this.add.rectangle(x, y, 150, 24, 0x22d3ee).setStrokeStyle(3, 0x164e63);
     this.physics.add.existing(pad, true);
     this.boosts.add(pad);
-    const label = this.add.text(x, y - 10, '▶ ▶ ▶', { fontSize: '24px', fontStyle: 'bold', color: '#ffffff' }).setOrigin(0.5);
+    const label = this.add.text(x, y - 2, '» » »', { fontSize: '24px', fontStyle: 'bold', color: '#ffffff' }).setOrigin(0.5);
     this.tweens.add({ targets: label, alpha: 0.35, duration: 450, yoyo: true, repeat: -1 });
   }
 
   private addHazard(x: number, y: number): void {
     const hazard = this.add.triangle(x, y, 0, 38, 35, 0, 70, 38, 0xef4444).setStrokeStyle(4, 0x991b1b);
+    this.add.text(x, y - 58, 'W ↑', { fontSize: '18px', fontStyle: 'bold', color: '#b91c1c' }).setOrigin(0.5);
     this.physics.add.existing(hazard, true);
     this.hazards.add(hazard);
   }
 
   private createPlayer(): void {
-    this.player = this.physics.add.sprite(160, 470, 'rayn-run-1').setDisplaySize(112, 124);
+    this.player = this.physics.add.sprite(160, 470, 'rayn-run-1').setDisplaySize(144, 144).setDepth(10);
     this.player.setCollideWorldBounds(false);
     this.player.setMaxVelocity(980, 1500);
     this.player.setDragX(300);
-    this.player.body?.setSize(54, 112).setOffset(30, 30);
+    this.player.body?.setSize(86, 170).setOffset(85,  60);
   }
 
   private createSpeedLines(): void {
@@ -242,20 +243,21 @@ export class GameScene extends Phaser.Scene {
 
   private createHud(): void {
     const panel = (x: number, w: number) =>
-      this.add.rectangle(x, 48, w, 62, 0x061d4f, 0.72).setScrollFactor(0).setDepth(20).setStrokeStyle(2, 0xffffff, 0.16);
+      this.add.rectangle(x, 48, w, 62, 0xffffff, 0.58).setScrollFactor(0).setDepth(20).setStrokeStyle(2, 0xffffff, 0.16);
 
     panel(116, 178); panel(302, 150); panel(470, 150); panel(1140, 150);
-    this.add.rectangle(785, 48, 430, 40, 0x061d4f, 0.64).setScrollFactor(0).setDepth(20).setStrokeStyle(2, 0xffffff, 0.16);
-    this.progressBar = this.add.rectangle(575, 48, 0, 24, 0x22d3ee, 1).setOrigin(0, 0.5).setScrollFactor(0).setDepth(21);
+    this.add.rectangle(785, 48, 430, 40, 0xffffff, 0.46).setScrollFactor(0).setDepth(20).setStrokeStyle(2, 0xffffff, 0.16);
+    this.progressBar = this.add.rectangle(575, 54, 0, 12, 0x22d3ee, 1).setOrigin(0, 0.5).setScrollFactor(0).setDepth(21);
 
     const mkLabel = (x: number, text: string) =>
-      this.add.text(x, 29, text, { fontSize: '13px', fontStyle: 'bold', color: '#8bf3ff' }).setOrigin(0.5).setScrollFactor(0).setDepth(22);
+      this.add.text(x, 29, text, { fontFamily: 'system-ui, sans-serif', fontSize: '13px', fontStyle: 'bold', color: '#155e75' }).setOrigin(0.5).setScrollFactor(0).setDepth(22);
     const mkValue = (x: number, text: string, size = 24) =>
-      this.add.text(x, 53, text, { fontSize: `${size}px`, fontStyle: 'bold', color: '#ffffff', stroke: '#082f74', strokeThickness: 5 }).setOrigin(0.5).setScrollFactor(0).setDepth(22);
+      this.add.text(x, 53, text, { fontFamily: 'system-ui, sans-serif', fontSize: `${size}px`, fontStyle: 'bold', color: '#163049', stroke: '#ffffff', strokeThickness: 2 }).setOrigin(0.5).setScrollFactor(0).setDepth(22);
 
     mkLabel(116, 'TIME'); this.timerText = mkValue(116, '0.00');
     mkLabel(302, 'SPEED'); this.speedText = mkValue(302, '0');
     mkLabel(470, 'COMBO'); this.comboText = mkValue(470, '0');
+    mkLabel(785, 'GOAL');
     mkLabel(1140, 'COIN'); this.coinText = mkValue(1140, '0');
     this.add.image(1093, 48, 'ui-coin').setDisplaySize(32, 32).setScrollFactor(0).setDepth(22);
 
@@ -264,7 +266,7 @@ export class GameScene extends Phaser.Scene {
       color: '#ffffff', stroke: '#082f74', strokeThickness: 9,
     }).setOrigin(0.5).setScrollFactor(0).setDepth(25);
 
-    this.add.text(640, 688, 'A ⇄ D 走る　 W ジャンプ　 S スライド　 SPACE ダッシュ', {
+    this.guide = this.add.text(640, 668, 'A ⇄ D 走る　 W ジャンプ　 S スライド　 SPACE ダッシュ　 H ヘルプ', {
       fontFamily: 'system-ui, sans-serif', fontSize: '17px', fontStyle: 'bold',
       color: '#ffffff', backgroundColor: 'rgba(3,20,47,.60)',
       padding: { left: 14, right: 14, top: 8, bottom: 8 },
@@ -278,11 +280,14 @@ export class GameScene extends Phaser.Scene {
     this.keyD = keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.D);
     this.keyW = keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.W);
     this.keyS = keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.S);
+    this.keyH = keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.H);
     this.keySpace = keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE);
   }
 
   update(time: number): void {
-    if (this.finished) return;
+    if (this.finished || this.respawning) return;
+    if (Phaser.Input.Keyboard.JustDown(this.keyH)) this.guideUntil = time + 3000;
+    this.guide.setAlpha(Phaser.Math.Clamp((this.guideUntil - time) / 300, 0, 1));
     const body = this.player.body as Phaser.Physics.Arcade.Body;
 
     if (Phaser.Input.Keyboard.JustDown(this.keyA)) this.handleStep('A', time);
@@ -290,44 +295,52 @@ export class GameScene extends Phaser.Scene {
 
     if (Phaser.Input.Keyboard.JustDown(this.keyW) && body.blocked.down) {
       this.player.setVelocityY(-650);
-      this.player.setTexture('rayn-jump').setDisplaySize(112, 124);
+      this.player.setTexture('rayn-jump');
       this.cameras.main.shake(90, 0.0025);
       this.showFeedback('JUMP!', '#38bdf8');
     }
 
     if (Phaser.Input.Keyboard.JustDown(this.keyS) && body.blocked.down) {
       this.slideUntil = time + 520;
-      body.setSize(88, 48).setOffset(58, 76);
-      this.player.setTexture('rayn-slide').setDisplaySize(150, 92);
+      body.setSize(170, 68).setOffset(43, 162);
+      this.player.setTexture('rayn-slide');
       this.showFeedback('SLIDE!', '#a78bfa');
     }
 
     if (time > this.slideUntil && this.player.texture.key === 'rayn-slide') {
-      body.setSize(54, 112).setOffset(30, 30);
-      this.player.setTexture('rayn-run-1').setDisplaySize(112, 124);
+      body.setSize(86, 170).setOffset(85, 60);
+      this.player.setTexture('rayn-run-1');
     }
 
     if (Phaser.Input.Keyboard.JustDown(this.keySpace) && time >= this.skillReadyAt) {
       this.player.setVelocityX(Math.max(body.velocity.x, 860));
       this.skillReadyAt = time + 4000;
+      this.dashUntil = time + 420;
       this.cameras.main.shake(150, 0.006);
       this.flashSpeedLines(1);
       this.showFeedback('DASH!', '#f97316', 1.18);
     }
 
-    if (body.blocked.down && time > this.slideUntil && body.velocity.x > 40) {
-      if (time - this.lastRunFrameAt > 90) {
-        this.runFrame = 1 - this.runFrame;
-        this.player.setTexture(this.runFrame ? 'rayn-run-2' : 'rayn-run-1').setDisplaySize(112, 124);
-        this.lastRunFrameAt = time;
-      }
-    } else if (!body.blocked.down && this.player.texture.key !== 'rayn-slide') {
-      this.player.setTexture('rayn-jump').setDisplaySize(112, 124);
+    const grounded = body.blocked.down || body.touching.down;
+    if (grounded && !this.wasGrounded) this.burst(this.player.x, body.bottom, 0xffffff, 10);
+    this.wasGrounded = grounded;
+    if (time > this.slideUntil) {
+      const pose = time < this.hazardInvulnerableUntil ? 'rayn-jump' : time < this.dashUntil ? 'rayn-dash' : !grounded ? 'rayn-jump' : this.runFrame ? 'rayn-run-2' : 'rayn-run-1';
+      this.player.setTexture(pose).setTint(time < this.hazardInvulnerableUntil ? 0xff9999 : 0xffffff);
+    }
+    if (grounded && body.velocity.x > 80 && time > this.dustAt) {
+      this.burst(this.player.x - 28, body.bottom, 0xe0f2fe, 2);
+      this.dustAt = time + 130;
+    }
+    if (body.velocity.x > 650 && time > this.trailAt) {
+      const ghost = this.add.image(this.player.x, this.player.y, this.player.texture.key).setDisplaySize(144, 144).setTint(0x22d3ee).setAlpha(0.25).setDepth(9);
+      this.tweens.add({ targets: ghost, alpha: 0, x: ghost.x - 35, duration: 220, onComplete: () => ghost.destroy() });
+      this.trailAt = time + 85;
     }
 
     const speedRatio = Phaser.Math.Clamp(body.velocity.x / 900, 0, 1);
     this.updateSpeedLines(speedRatio);
-    this.cameras.main.setZoom(1 + speedRatio * 0.025);
+
 
     if (this.player.y > 690) this.resetAfterFall();
     if (this.player.x >= this.worldWidth - 520) {
@@ -338,12 +351,17 @@ export class GameScene extends Phaser.Scene {
     this.timerText.setText(((time - this.startedAt) / 1000).toFixed(2));
     this.speedText.setText(String(Math.max(0, Math.round(body.velocity.x))));
     this.comboText.setText(String(this.runInput.getCombo()));
-    this.coinText.setText(String(this.coinsCollected));
-    this.progressBar.width = 420 * Phaser.Math.Clamp(this.player.x / (this.worldWidth - 520), 0, 1);
+    this.coinText.setText(`${this.coinsCollected}/15`);
+    this.progressBar.setSize(420 * Phaser.Math.Clamp((this.player.x - 160) / (this.worldWidth - 680), 0, 1), 12);
   }
 
   private handleStep(key: 'A' | 'D', time: number): void {
     const result = this.runInput.step(key, time);
+    this.steps++;
+    if (result.timing === 'perfect') this.perfect++;
+    if (!result.valid) this.misses++;
+    this.maxCombo = Math.max(this.maxCombo, this.runInput.getCombo());
+    this.runFrame = key === 'A' ? 0 : 1;
     const body = this.player.body as Phaser.Physics.Arcade.Body;
 
     if (!result.valid) {
@@ -383,8 +401,12 @@ export class GameScene extends Phaser.Scene {
   }
 
   private hitBoost(): void {
+    if (this.time.now < this.boostReadyAt) return;
     const body = this.player.body as Phaser.Physics.Arcade.Body;
     if (body.velocity.y > 200) return;
+    this.boostReadyAt = this.time.now + 700;
+    this.dashUntil = this.time.now + 420;
+    this.burst(this.player.x, this.player.y + 45, 0x22d3ee, 16);
     this.player.setVelocityX(Math.max(body.velocity.x, 900));
     this.cameras.main.shake(130, 0.005);
     this.flashSpeedLines(1);
@@ -392,9 +414,11 @@ export class GameScene extends Phaser.Scene {
   }
 
   private collectCoin(_player: unknown, coin: unknown): void {
-    const coinObject = coin as Phaser.GameObjects.GameObject;
-    const x = (coinObject as Phaser.GameObjects.Components.Transform).x;
-    const y = (coinObject as Phaser.GameObjects.Components.Transform).y;
+    const coinObject = coin as Phaser.Physics.Arcade.Image;
+    const x = coinObject.x;
+    const y = coinObject.y;
+    this.tweens.killTweensOf(coinObject);
+    this.burst(x, y, 0xfacc15, 10);
     coinObject.destroy();
     this.coinsCollected += 1;
     const pop = this.add.text(x, y - 20, '+1', { fontSize: '28px', fontStyle: 'bold', color: '#facc15', stroke: '#7c2d12', strokeThickness: 4 }).setOrigin(0.5);
@@ -403,7 +427,9 @@ export class GameScene extends Phaser.Scene {
 
   private hitHazard(): void {
     const body = this.player.body as Phaser.Physics.Arcade.Body;
-    if (this.time.now < this.slideUntil || this.time.now < this.hazardInvulnerableUntil) return;
+    if (this.time.now < this.hazardInvulnerableUntil) return;
+    this.misses++;
+    this.runInput.breakCombo();
     this.hazardInvulnerableUntil = this.time.now + 700;
     this.player.setVelocityX(Math.max(90, body.velocity.x * 0.36));
     this.player.setVelocityY(-260);
@@ -412,12 +438,18 @@ export class GameScene extends Phaser.Scene {
   }
 
   private resetAfterFall(): void {
-    const safeX = Math.max(120, this.player.x - 420);
+    this.respawning = true;
+    this.misses++;
+    const desiredX = Math.max(160, this.player.x - 420);
+    const sections = [[0, 1550], [1680, 2700], [2860, 3760], [3900, 5500], [5650, 7600]];
+    const section = sections.filter(([start]) => start < desiredX).at(-1)!;
+    const safeX = Phaser.Math.Clamp(desiredX, section[0] + 80, section[1] - 80);
     this.cameras.main.fadeOut(110, 4, 20, 47);
     this.time.delayedCall(120, () => {
       this.player.setPosition(safeX, 460);
       this.player.setVelocity(0, 0);
-      this.runInput.reset();
+      this.runInput.breakCombo();
+      this.respawning = false;
       this.cameras.main.fadeIn(180, 4, 20, 47);
       this.showFeedback('RETURN', '#f59e0b');
     });
@@ -425,10 +457,20 @@ export class GameScene extends Phaser.Scene {
 
   private finishRace(): void {
     this.finished = true;
-    const data: ResultData = { timeMs: this.time.now - this.startedAt, coins: this.coinsCollected };
+    const data: RaceResult = { timeMs: this.time.now - this.startedAt, coins: this.coinsCollected, perfect: this.perfect, steps: this.steps, maxCombo: this.maxCombo, misses: this.misses };
     this.player.setVelocity(0, 0);
-    this.cameras.main.flash(300, 255, 255, 255);
-    this.time.delayedCall(420, () => this.scene.start('result', data));
+    (this.player.body as Phaser.Physics.Arcade.Body).setAllowGravity(false);
+    this.player.setTexture('rayn-goal').clearTint();
+    this.showFeedback('GOAL!', '#facc15', 1.3);
+    this.burst(this.player.x, this.player.y, 0xfacc15, 32);
+    this.time.delayedCall(800, () => this.scene.start('result', data));
+  }
+
+  private burst(x: number, y: number, color: number, count: number): void {
+    for (let i = 0; i < count; i++) {
+      const p = this.add.circle(x, y, Phaser.Math.Between(2, 5), color).setDepth(12);
+      this.tweens.add({ targets: p, x: x + Phaser.Math.Between(-75, 75), y: y - Phaser.Math.Between(12, 80), alpha: 0, scale: 0.2, duration: 400, onComplete: () => p.destroy() });
+    }
   }
 
   private showFeedback(message: string, color: string, scale = 1): void {

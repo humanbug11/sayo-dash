@@ -1,75 +1,27 @@
 import Phaser from 'phaser';
 import { loadUiAssets } from '../utils/loadUiAssets';
-
+import { readBest } from '../systems/RaceRecord';
+import { sceneKey } from '../utils/sceneKeys';
+import { button, cityBackdrop, text } from '../utils/ui';
 export class MenuScene extends Phaser.Scene {
   constructor() { super('menu'); }
-
   preload(): void { loadUiAssets(this); }
-
   create(): void {
-    const { width, height } = this.scale;
-
-    const haze = this.add.graphics();
-    haze.fillStyle(0x56d8ff, 0.22);
-    haze.fillRoundedRect(70, 56, width - 140, height - 112, 34);
-    haze.lineStyle(2, 0xffffff, 0.16);
-    haze.strokeRoundedRect(70, 56, width - 140, height - 112, 34);
-
-    this.add.image(width / 2, 180, 'ui-logo').setDisplaySize(650, 220);
-
-    this.add.text(width / 2, 300, 'A ⇄ D を交互に踏んで、最高速へ。', {
-      fontFamily: 'system-ui, sans-serif',
-      fontSize: '31px',
-      fontStyle: 'bold',
-      color: '#ffffff',
-      stroke: '#082f74',
-      strokeThickness: 8,
-    }).setOrigin(0.5);
-
-    this.add.text(width / 2, 342, 'タイミングを合わせるほど加速。ジャンプ・スライド・ダッシュで駆け抜けろ！', {
-      fontFamily: 'system-ui, sans-serif',
-      fontSize: '18px',
-      color: '#dff8ff',
-      stroke: '#082f74',
-      strokeThickness: 5,
-    }).setOrigin(0.5);
-
-    const start = this.add.image(width / 2, 470, 'ui-button-start')
-      .setDisplaySize(390, 130)
-      .setInteractive({ useHandCursor: true });
-    this.tweens.add({
-      targets: start,
-      scaleX: 1.035,
-      scaleY: 1.035,
-      duration: 700,
-      yoyo: true,
-      repeat: -1,
-      ease: 'Sine.InOut',
-    });
-
-    start.on('pointerover', () => start.setTint(0xfff4c2));
-    start.on('pointerout', () => start.clearTint());
-    start.on('pointerdown', () => this.scene.start('game'));
-
-    this.add.text(width / 2, 575, 'A / D 走る　　W ジャンプ　　S スライド　　SPACE ダッシュ', {
-      fontFamily: 'system-ui, sans-serif',
-      fontSize: '20px',
-      fontStyle: 'bold',
-      color: '#ffffff',
-      backgroundColor: 'rgba(5,31,71,.64)',
-      padding: { left: 18, right: 18, top: 10, bottom: 10 },
-    }).setOrigin(0.5);
-
-    const footer = this.add.text(width / 2, 645, 'PERFECT をつなげて最高速を狙え', {
-      fontFamily: 'system-ui, sans-serif',
-      fontSize: '17px',
-      fontStyle: 'bold',
-      color: '#8bf3ff',
-    }).setOrigin(0.5);
-
-    this.tweens.add({ targets: footer, alpha: 0.35, duration: 850, yoyo: true, repeat: -1 });
-
-    this.input.keyboard?.once('keydown-SPACE', () => this.scene.start('game'));
-    this.input.keyboard?.once('keydown-ENTER', () => this.scene.start('game'));
+    document.querySelector('#game')?.setAttribute('data-scene', 'menu');
+    cityBackdrop(this);
+    this.add.rectangle(640, 340, 1040, 550, 0xffffff, 0.72).setStrokeStyle(2, 0xffffff);
+    text(this, 640, 103, 'KEYBOARD PARKOUR / 01 CITY', 15, '#0891b2');
+    const logo = this.add.image(640, 213, 'ui-logo');
+    logo.setScale(Math.min(610 / logo.width, 180 / logo.height));
+    text(this, 640, 327, 'A と D を交互に。リズムで駆け抜けろ。', 29);
+    const best = readBest();
+    text(this, 640, 377, best ? `CITY BEST  ${(best / 1000).toFixed(2)} s` : '最速タイムを、ここから。', 19, '#0e7490');
+    let starting = false;
+    const start = () => { if (!starting) { starting = true; this.scene.start('game'); } };
+    button(this, 640, 458, 'START  →', start);
+    text(this, 640, 538, 'A / D  左右の足     W  ジャンプ     S  スライド     SPACE  ダッシュ', 18);
+    text(this, 640, 579, 'ENTER / SPACE でスタート • H で操作を確認', 16, '#64748b');
+    sceneKey(this, 'keydown-ENTER', start);
+    sceneKey(this, 'keydown-SPACE', start);
   }
 }
