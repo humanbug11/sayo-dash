@@ -1,5 +1,6 @@
 import Phaser from 'phaser';
 import { RunInput } from '../systems/RunInput';
+import { loadUiAssets } from '../utils/loadUiAssets';
 
 type ResultData = {
   timeMs: number;
@@ -30,6 +31,8 @@ export class GameScene extends Phaser.Scene {
   private coinText!: Phaser.GameObjects.Text;
   private feedbackText!: Phaser.GameObjects.Text;
   private progressBar!: Phaser.GameObjects.Rectangle;
+  private progressFrameX = 0;
+  private progressFrameWidth = 0;
 
   private keyA!: Phaser.Input.Keyboard.Key;
   private keyD!: Phaser.Input.Keyboard.Key;
@@ -39,6 +42,10 @@ export class GameScene extends Phaser.Scene {
 
   constructor() {
     super('game');
+  }
+
+  preload(): void {
+    loadUiAssets(this);
   }
 
   create(): void {
@@ -70,20 +77,27 @@ export class GameScene extends Phaser.Scene {
 
   private createBackground(): void {
     const sky = this.add.graphics();
-    sky.fillGradientStyle(0x7dd3fc, 0x7dd3fc, 0xe0f2fe, 0xe0f2fe, 1);
+    sky.fillGradientStyle(0x68d7ff, 0x68d7ff, 0xecfaff, 0xecfaff, 1);
     sky.fillRect(0, 0, this.worldWidth, 720);
 
-    for (let x = 200; x < this.worldWidth; x += 520) {
-      const distant = this.add.rectangle(x, 365, 260, 260, 0xffffff, 0.28);
-      distant.setOrigin(0.5, 1);
+    for (let x = 200; x < this.worldWidth; x += 460) {
+      this.add.circle(x, 120, 36, 0xffffff, 0.4);
+      this.add.circle(x + 28, 108, 28, 0xffffff, 0.4);
+      this.add.circle(x + 58, 122, 32, 0xffffff, 0.4);
     }
 
-    for (let x = 110; x < this.worldWidth; x += 230) {
-      this.add.circle(x, 500, 95, 0x22c55e, 0.22);
-      this.add.circle(x + 65, 515, 70, 0x16a34a, 0.18);
+    for (let x = 140; x < this.worldWidth; x += 340) {
+      this.add.rectangle(x, 390, 180, 180, 0xffffff, 0.15).setOrigin(0.5, 1);
+      this.add.rectangle(x + 60, 405, 110, 140, 0x7dd3fc, 0.16).setOrigin(0.5, 1);
+    }
+
+    for (let x = 60; x < this.worldWidth; x += 180) {
+      this.add.circle(x, 560, 80, 0x22c55e, 0.24);
+      this.add.circle(x + 55, 570, 60, 0x16a34a, 0.18);
     }
 
     this.add.rectangle(this.worldWidth / 2, 655, this.worldWidth, 130, 0x14532d);
+    this.add.rectangle(this.worldWidth / 2, 620, this.worldWidth, 12, 0xfacc15, 0.95);
   }
 
   private createStage(): void {
@@ -119,29 +133,15 @@ export class GameScene extends Phaser.Scene {
     ];
 
     coinPositions.forEach(([x, y]) => {
-      const coin = this.add.circle(x, y, 16, 0xfacc15).setStrokeStyle(5, 0xf59e0b);
-      this.physics.add.existing(coin);
-      const body = coin.body as Phaser.Physics.Arcade.Body;
-      body.setAllowGravity(false);
-      body.setImmovable(true);
-      body.setCircle(16);
+      const coin = this.physics.add.image(x, y, 'ui-coin').setDisplaySize(48, 48);
+      const coinBody = coin.body as Phaser.Physics.Arcade.Body;
+      coinBody.setAllowGravity(false);
+      coinBody.setImmovable(true);
+      coinBody.setCircle(24);
       this.coins.add(coin);
     });
 
-    this.add
-      .text(this.worldWidth - 370, 250, 'GOAL', {
-        fontFamily: 'system-ui, sans-serif',
-        fontSize: '46px',
-        fontStyle: 'bold',
-        color: '#111827',
-        backgroundColor: '#ffffff',
-        padding: { x: 18, y: 8 },
-      })
-      .setOrigin(0.5);
-
-    this.add.rectangle(this.worldWidth - 390, 415, 18, 390, 0x334155);
-    const flag = this.add.rectangle(this.worldWidth - 300, 260, 170, 88, 0xffffff);
-    flag.setStrokeStyle(8, 0x111827);
+    this.add.image(this.worldWidth - 320, 355, 'ui-goal-sign').setDisplaySize(320, 213);
   }
 
   private addPlatform(x: number, y: number, width: number, height: number): void {
@@ -172,19 +172,21 @@ export class GameScene extends Phaser.Scene {
   }
 
   private createPlayer(): void {
-    const g = this.make.graphics({ x: 0, y: 0 }, false);
-    g.fillStyle(0xffffff);
-    g.fillCircle(26, 18, 13);
-    g.lineStyle(9, 0xffffff, 1);
-    g.beginPath();
-    g.moveTo(26, 32); g.lineTo(26, 76);
-    g.moveTo(26, 44); g.lineTo(4, 63);
-    g.moveTo(26, 44); g.lineTo(49, 61);
-    g.moveTo(26, 76); g.lineTo(7, 106);
-    g.moveTo(26, 76); g.lineTo(49, 105);
-    g.strokePath();
-    g.generateTexture('runner', 56, 112);
-    g.destroy();
+    if (!this.textures.exists('runner')) {
+      const g = this.make.graphics({ x: 0, y: 0 }, false);
+      g.fillStyle(0xffffff);
+      g.fillCircle(26, 18, 13);
+      g.lineStyle(9, 0xffffff, 1);
+      g.beginPath();
+      g.moveTo(26, 32); g.lineTo(26, 76);
+      g.moveTo(26, 44); g.lineTo(4, 63);
+      g.moveTo(26, 44); g.lineTo(49, 61);
+      g.moveTo(26, 76); g.lineTo(7, 106);
+      g.moveTo(26, 76); g.lineTo(49, 105);
+      g.strokePath();
+      g.generateTexture('runner', 56, 112);
+      g.destroy();
+    }
 
     this.player = this.physics.add.sprite(160, 490, 'runner');
     this.player.setTint(0x0f172a);
@@ -195,32 +197,51 @@ export class GameScene extends Phaser.Scene {
   }
 
   private createHud(): void {
-    const makeText = (x: number, y: number, value: string, size = 28) =>
+    const hud = this.add.image(640, 82, 'ui-hud').setDisplaySize(1200, 400).setScrollFactor(0).setDepth(20);
+    const hudWidth = hud.displayWidth;
+    const hudHeight = hud.displayHeight;
+    const left = hud.x - hudWidth / 2;
+    const top = hud.y - hudHeight / 2;
+
+    const makeValueText = (x: number, y: number, value: string, size = 30, align: 'left' | 'center' = 'left') =>
       this.add.text(x, y, value, {
         fontFamily: 'system-ui, sans-serif',
-        fontSize: size,
+        fontSize: `${size}px`,
         fontStyle: 'bold',
         color: '#ffffff',
-        stroke: '#0f172a',
+        stroke: '#082f74',
         strokeThickness: 6,
-      }).setScrollFactor(0).setDepth(20);
+        align,
+      }).setScrollFactor(0).setDepth(21).setOrigin(align === 'center' ? 0.5 : 0, 0.5);
 
-    this.timerText = makeText(36, 26, '0.00 秒', 34);
-    this.speedText = makeText(36, 75, '速度 0', 24);
-    this.comboText = makeText(36, 112, 'コンボ 0', 24);
-    this.coinText = makeText(1080, 32, '● 0', 28).setOrigin(1, 0);
+    this.timerText = makeValueText(left + hudWidth * 0.09, top + hudHeight * 0.58, '0.00 秒', 24);
+    this.speedText = makeValueText(left + hudWidth * 0.255, top + hudHeight * 0.58, '0', 24, 'center');
+    this.comboText = makeValueText(left + hudWidth * 0.365, top + hudHeight * 0.58, '0', 24, 'center');
+    this.coinText = makeValueText(left + hudWidth * 0.93, top + hudHeight * 0.58, '0', 30, 'center');
 
-    this.add.rectangle(640, 36, 470, 18, 0x0f172a, 0.35).setScrollFactor(0).setDepth(19);
-    this.progressBar = this.add.rectangle(405, 36, 0, 12, 0xf97316).setOrigin(0, 0.5).setScrollFactor(0).setDepth(20);
-    this.feedbackText = makeText(640, 140, '', 42).setOrigin(0.5);
+    this.progressFrameX = left + hudWidth * 0.425;
+    this.progressFrameWidth = hudWidth * 0.36;
+    const progressY = top + hudHeight * 0.62;
 
-    this.add.text(640, 670, 'A / D 交互で加速　W ジャンプ　S スライド　SPACE ダッシュ', {
+    this.add.rectangle(this.progressFrameX + this.progressFrameWidth / 2, progressY, this.progressFrameWidth, 26, 0x0b3e91, 0.45)
+      .setScrollFactor(0)
+      .setDepth(21)
+      .setStrokeStyle(2, 0xffffff, 0.25);
+    this.progressBar = this.add.rectangle(this.progressFrameX, progressY, 0, 18, 0x3bdeff)
+      .setOrigin(0, 0.5)
+      .setScrollFactor(0)
+      .setDepth(22);
+
+    this.feedbackText = this.add.text(640, 156, '', {
       fontFamily: 'system-ui, sans-serif',
-      fontSize: '22px',
+      fontSize: '38px',
+      fontStyle: 'bold',
       color: '#ffffff',
-      backgroundColor: '#0f172acc',
-      padding: { x: 18, y: 10 },
-    }).setOrigin(0.5).setScrollFactor(0).setDepth(20);
+      stroke: '#082f74',
+      strokeThickness: 8,
+    }).setOrigin(0.5).setScrollFactor(0).setDepth(22);
+
+    this.add.image(640, 658, 'ui-control-strip').setDisplaySize(1100, 367).setScrollFactor(0).setDepth(20);
   }
 
   private bindInput(): void {
@@ -271,11 +292,11 @@ export class GameScene extends Phaser.Scene {
 
     const elapsed = time - this.startedAt;
     this.timerText.setText(`${(elapsed / 1000).toFixed(2)} 秒`);
-    this.speedText.setText(`速度 ${Math.max(0, Math.round(body.velocity.x))}`);
-    this.comboText.setText(`コンボ ${this.runInput.getCombo()}`);
-    this.coinText.setText(`● ${this.coinsCollected}`);
+    this.speedText.setText(`${Math.max(0, Math.round(body.velocity.x))}`);
+    this.comboText.setText(`${this.runInput.getCombo()}`);
+    this.coinText.setText(`${this.coinsCollected}`);
     const progress = Phaser.Math.Clamp(this.player.x / (this.worldWidth - 520), 0, 1);
-    this.progressBar.width = 470 * progress;
+    this.progressBar.width = this.progressFrameWidth * progress;
   }
 
   private handleStep(key: 'A' | 'D', time: number): void {
