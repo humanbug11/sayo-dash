@@ -1,7 +1,7 @@
 {
   "name": "sayo-dash",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.2.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -10,7 +10,8 @@
     "deploy": "wrangler deploy"
   },
   "dependencies": {
-    "phaser": "^3.90.0"
+    "phaser": "^3.90.0",
+    "three": "^0.180.0"
   },
   "devDependencies": {
     "typescript": "^5.9.2",
