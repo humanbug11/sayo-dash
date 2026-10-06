@@ -302,8 +302,9 @@ export class GameScene extends Phaser.Scene {
     this.showFeedback('ブースト！', '#06b6d4');
   }
 
-  private collectCoin(_player: Phaser.GameObjects.GameObject, coin: Phaser.GameObjects.GameObject): void {
-    coin.destroy();
+  private collectCoin(_player: unknown, coin: unknown): void {
+    const coinObject = coin as Phaser.GameObjects.GameObject;
+    coinObject.destroy();
     this.coinsCollected += 1;
     this.showFeedback('+1', '#facc15');
   }
